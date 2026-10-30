@@ -41,6 +41,9 @@ for (const panel of document.querySelectorAll('[data-finder]')) {
   const items = [...scope.querySelectorAll('[data-finder-items] > li')];
   const count = scope.querySelector('[data-finder-count]');
   const empty = scope.querySelector('[data-finder-empty]');
+  const more = scope.querySelector('[data-finder-more]');
+  const page = more ? Number(more.dataset.page) : Infinity;
+  let limit = page;
   const apply = () => {
     const on = {};
     for (const c of panel.querySelectorAll('.nu-chip[aria-pressed="true"]')) (on[c.dataset.filter] ||= []).push(c.dataset.value);
@@ -48,9 +51,10 @@ for (const panel of document.querySelectorAll('[data-finder]')) {
     for (const li of items) {
       const terms = JSON.parse(li.dataset.terms);
       const ok = Object.entries(on).every(([k, vals]) => vals.some((v) => (terms[k] || []).includes(v)));
-      li.hidden = !ok;
       shown += ok;
+      li.hidden = !ok || shown > limit;
     }
+    if (more) more.hidden = shown <= limit;
     count.textContent = `${shown} of ${items.length} ${count.dataset.noun || 'results'}`;
     empty.hidden = shown > 0;
   };
@@ -58,9 +62,13 @@ for (const panel of document.querySelectorAll('[data-finder]')) {
     const chip = event.target.closest('.nu-chip');
     if (!chip) return;
     chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    limit = page;
     apply();
   });
+  more?.addEventListener('click', () => { limit += page; apply(); });
+  apply();
   panel.addEventListener('reset', () => {
+    limit = page;
     for (const c of panel.querySelectorAll('.nu-chip')) c.setAttribute('aria-pressed', 'false');
     setTimeout(apply);
   });
