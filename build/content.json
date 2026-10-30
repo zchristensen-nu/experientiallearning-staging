@@ -1957,6 +1957,14 @@
      "sourceClasses": "wp-block-group alignfull is-style-align-center-dark-mode is-layout-flow wp-block-group-is-layout-flow"
     },
     {
+     "type": "film",
+     "eyebrow": "Northeastern Global Experience",
+     "heading": "One global experience can lead to another",
+     "video": "Global_01_VID_Global-Experience.mp4",
+     "src": "https://experientiallearning.northeastern.edu/wp-content/uploads/2025/09/Global_01_VID_Global-Experience.mp4",
+     "note": "Added by hand 2026-10-30: the live headline is typed in by script, so the crawl saw empty headings."
+    },
+    {
      "type": "text+list",
      "heading": "Benefit from the power of place",
      "headingLevel": 2,

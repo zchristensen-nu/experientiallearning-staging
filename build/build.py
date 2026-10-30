@@ -4,14 +4,15 @@ Content is the live experientiallearning.northeastern.edu content (scraped into 
 the live site uses is rendered with the system organism that fits it. The page shell comes from ~/Projects/nu-site-kit.
     python3 build/build.py            # writes docs/
 """
+import html
 import json
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / "Projects/nu-site-kit"))
-from kit import (Site, band, card_grid, e, hero_page, hero_title, href, i, img, link_row,  # noqa: E402
-                 not_found, section_header)
+from kit import (Site, band, card_grid, e, facet_chips, finder, hero_page, hero_title, href, i, img,  # noqa: E402
+                 link_row, not_found, section_header)
 
 ROOT = Path(__file__).resolve().parents[1]
 C = json.loads((ROOT / "build/content.json").read_text())
@@ -92,8 +93,11 @@ def r_text(s, n):
     h2 = heading or eyebrow
     lead = body[0] if body else None
     more = "".join(f'<p class="nu-text">{b}</p>' for b in body[1:])
+    items = [fix(x) for lst in s.get("lists", []) for x in lst["items"]]
+    if items:
+        more += '<ul class="st-bullets">' + "".join(f"<li>{x}</li>" for x in items) + "</ul>"
     a = actions(s.get("buttons"))
-    return band(section_header(h2, lead, hid=f"s{n}") + (f'<div class="st-more">{more}</div>' if more else "") + (f'<div class="st-actions">{a}</div>' if a else ""))
+    return band(section_header(h2, lead, hid=f"s{n}", extra=more) + (f'<div class="st-actions">{a}</div>' if a else ""))
 
 
 def r_quick(s, n):
@@ -117,7 +121,8 @@ def story(card, link=True):
     title = fix(card["title"])
     t = f'<a class="nu-story-card__link" href="{href(local(url))}">{title}</a>' if link and url and not card.get("linkDisabled") else title
     m = "".join(f"<li>{x}</li>" for x in meta)
-    ex = f'<p class="nu-text nu-text--small">{fix(card["excerpt"])}</p>' if card.get("excerpt") else ""
+    text = card.get("excerpt") or " ".join(card.get("body", []))
+    ex = f'<p class="nu-text nu-text--small">{fix(text)}</p>' if text else ""
     return f'''<li><article class="nu-story-card">
   <span class="nu-story-card__media">{img(file(card["image"]), card["image"].get("alt", ""))}</span>
   <div class="nu-story-card__body">
@@ -158,11 +163,13 @@ def r_cards(s, n):
     if is_story:
         h = fix(s.get("heading") or "Student experiences to inspire your journey")
         return band(card_grid([story(c) for c in cards], h, f"s{n}"))
+    own = fix(s.get("heading") or "")
+    own_head = section_header(own, fix(s["body"][0]) if s.get("body") else None, hid=f"s{n}") if own and not s.get("eyebrow") else ""
     if all("image" not in c for c in cards):  # a list of short claims: hairline rows
         pts = "".join(f'<li><h3 class="nu-heading nu-heading--h3">{fix(c["title"])}</h3></li>' for c in cards)
-        return band(f'<ul class="st-points" role="list">{pts}</ul>', "st-band--tight")
-    if all("excerpt" not in c for c in cards):  # benefit tiles: title and image
-        return band(card_grid([story(c, False) for c in cards]))
+        return band(own_head + f'<ul class="st-points" role="list">{pts}</ul>', "st-band--tight")
+    if all("excerpt" not in c for c in cards):  # benefit tiles: title, image and their copy
+        return band(own_head + card_grid([story(c, False) for c in cards]))
     h = sc(s.get("eyebrow") or s.get("heading") or "")
     head = section_header(h, fix(s["body"][0]) if s.get("body") else None, hid=f"s{n}") if h else ""
     return band(head + f'<ul class="st-program-grid" role="list">{"".join(program_card(c) for c in cards)}</ul>', "st-band--tight")
@@ -210,31 +217,15 @@ def r_cta(s, n):
 
 def r_finder(s, n):
     opps = [o for o in C["opportunities"] if o.get("excerpt")]
-    groups = ""
-    for f in s["filters"]:
-        key = {"nu_category": "category", "nu_education-level": "educationLevel", "nu_duration": "duration"}[f["taxonomy"]]
-        chips = "".join(f'<button class="nu-chip" type="button" aria-pressed="false" data-filter="{key}" data-value="{e(o)}">{e(o)} <span class="nu-chip-group__count">{sum(o in x.get(key, []) for x in opps)}</span></button>' for o in f["options"])
-        groups += f'''<div class="nu-filter-panel__facet"><div class="nu-chip-group" role="group" aria-labelledby="fp-{key}">
-  <div class="nu-chip-group__head"><p class="nu-chip-group__label" id="fp-{key}">{e(sc(f["label"]))}</p></div>
-  <div class="nu-chip-group__chips">{chips}</div></div></div>'''
+    keys = {"nu_category": "category", "nu_education-level": "educationLevel", "nu_duration": "duration"}
+    facets = "".join(facet_chips(keys[f["taxonomy"]], sc(f["label"]), f["options"], lambda v, k=keys[f["taxonomy"]]: sum(v in x.get(k, []) for x in opps)) for f in s["filters"])
     cards = ""
     for o in sorted(opps, key=lambda o: o["title"].lower()):
-        terms = json.dumps({k: o.get(k, []) for k in ("category", "educationLevel", "duration")})
+        terms = json.dumps({k: o.get(k, []) for k in keys.values()})
         cards += program_card(o).replace("<li>", f"<li data-terms='{e(terms)}'>", 1)
-    return f'''<section class="st-band st-finder" aria-labelledby="s{n}">
-  {section_header("All experiential learning opportunities", fix(next((x["body"][0] for x in C["pages"][3]["sections"] if x.get("heading") == "All experiential learning opportunities"), "")), hid=f"s{n}")}
-  <div class="st-finder__layout">
-    <form class="nu-filter-panel nu-filter-panel--sidebar" aria-labelledby="fp-title" data-finder>
-      <div class="nu-filter-panel__head"><h3 class="nu-heading nu-heading--h4" id="fp-title">Filter opportunities</h3><button class="nu-filter-panel__clear" type="reset">Clear all</button></div>
-      {groups}
-    </form>
-    <div class="st-finder__results">
-      <p class="nu-text nu-text--meta" aria-live="polite" data-finder-count>{len(opps)} opportunities</p>
-      <ul class="st-program-grid" role="list" data-finder-items>{cards}</ul>
-      <p class="nu-text" data-finder-empty hidden>No opportunities match those filters. Clear one to see more.</p>
-    </div>
-  </div>
-</section>'''
+    intro = next((x["body"][0] for x in C["pages"][3]["sections"] if x.get("heading") == "All experiential learning opportunities"), "")
+    return finder("Filter opportunities", "opportunities", facets, cards,
+                  head=section_header("All experiential learning opportunities", fix(intro), hid=f"s{n}"))
 
 
 def r_form(s, n):
@@ -273,8 +264,41 @@ def r_form(s, n):
 </section>'''
 
 
-RENDER = {"text": r_text, "quick-links": r_quick, "cards-carousel": r_carousel, "cards": r_cards, "stats": r_stats,
+def r_film(s, n):
+    """A full-bleed film band on Night with a pause control (brand: autoplaying video must pause).
+    The live film has its headline burned into the frames, so the heading is for screen readers only."""
+    return f'''<section class="st-film" data-mode="dark" aria-labelledby="s{n}">
+  <video class="nu-video nu-video--fill st-film__video" muted loop playsinline preload="metadata" data-film src="{{{{base}}}}assets/video/{s["video"]}" aria-hidden="true"></video>
+  <span class="nu-scrim nu-scrim--grain"></span>
+  <h2 class="u-vh" id="s{n}">{e(s["eyebrow"])}: {e(s["heading"])}</h2>
+  <div class="nu-media-control st-film__control"><button class="nu-icon-button nu-icon-button--outline nu-media-control__toggle" type="button" aria-label="Pause the film" aria-pressed="false" data-film-toggle>{i("pause")}{i("play")}</button></div>
+</section>'''
+
+
+RENDER = {"film": r_film, "text": r_text, "quick-links": r_quick, "cards-carousel": r_carousel, "cards": r_cards, "stats": r_stats,
           "media-text": r_media, "text+list": r_media, "logos": r_logos, "cta": r_cta, "finder": r_finder, "form": r_form}
+
+
+def live_text(sec):
+    """Every piece of visible live copy in a section: headings, paragraphs, list items, card titles and copy, stats."""
+    out = [sec.get("heading"), *sec.get("body", [])]
+    out += [x for lst in sec.get("lists", []) for x in lst.get("items", []) if isinstance(x, str)]
+    for c in sec.get("cards", []):
+        out += [c.get("title"), c.get("excerpt"), *c.get("body", [])]
+    out += [x.get("label") for x in sec.get("stats", [])]
+    return [fix(t) for t in out if t]
+
+
+def flat(markup):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", markup))).strip().lower()
+
+
+def check_rendered(slug, sections, body):
+    """Fail the build when live copy didn't make it onto the page, instead of dropping it silently."""
+    seen = flat(body)
+    missing = [t for sec in sections if sec["type"] not in ("finder", "search", "form") for t in live_text(sec) if flat(t)[:60] not in seen]
+    if missing:
+        sys.exit(f"{slug}: {len(missing)} piece(s) of live copy not rendered:\n  " + "\n  ".join(m[:90] for m in missing))
 
 
 def build_page(p):
@@ -319,6 +343,7 @@ def build_page(p):
             body += RENDER[s["type"]](s, n)
     if not hero:
         body = hero_title(h1, crumbs=crumbs) + body
+    check_rendered(p["slug"], rest, body)
     title = "Experiential Learning" if p["slug"] == "home" else h1
     site.page(path, title, p.get("metaDescription") or h1, body, current, hero)
 
